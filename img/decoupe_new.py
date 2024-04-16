@@ -6,7 +6,7 @@ import os
 
 # Définition des valeurs constantes
 
-IMAGE_DIMENSIONS=(180, 180)
+IMAGE_DIMENSIONS=(256, 256)
 SLICES=4 # Définition du nombre de divisions par côté
 ORIGINAL_IMAGES_DIRECTORY="./image_brute"
 SLICED_IMAGES_DIRECTORY="./sliced"
