@@ -6,17 +6,17 @@ import os
 
 # Définition des valeurs constantes
 
-IMAGE_DIMENSIONS=(256, 256)
-SLICES=4 # Définition du nombre de divisions par côté
+IMAGE_DIMENSIONS=(32, 32)
+SLICES=2 # Définition du nombre de divisions par côté
 ORIGINAL_IMAGES_DIRECTORY="./image_brute"
 SLICED_IMAGES_DIRECTORY="./sliced"
 RESIZED_IMAGES_DIRECTORY="./resized"
 MERGED_IMAGES_DIRECTORY="./merged"
+PUZZLE_IMAGES_DIRECTORY="./puzzle"
 
 # Définition d'une fonction pour sauvegarder une image
 def save_image(img: Image, path):
-    if (not os.path.exists(os.path.dirname(path))):
-        os.mkdir(os.path.dirname(path))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path)
 
 # Ouverture de l'image à découper
@@ -29,26 +29,30 @@ for i, image in enumerate(list_image):
 
     # Calcul de la taille de chaque carré a partir de l'image globale
     total_width, total_height = img.size
-    piece_width = total_width / SLICES
-    piece_height = total_height / SLICES
+    piece_width = total_width // SLICES
+    piece_height = total_height // SLICES
 
     # Initialization de la liste de toutes les pieces
     pieces = []
 
     # Boucles pour parcourir l'image par carrés
+    j = 0
     for x in range(SLICES):  # Parcourt les colonnes
         for y in range(SLICES):  # Parcourt les lignes
-            # Découpe de l'image
-            im2 = img.crop((piece_width * x,
-                            piece_height * y,
-                            piece_width * x + piece_width,
-                            piece_height * y + piece_height))
-            #Rajout de la piece dans la liste
+            # Calculate the exact integer indices for the crop
+            left = piece_width * x
+            upper = piece_height * y
+            right = left + piece_width
+            lower = upper + piece_height
+            # The crop method is inclusive of the left and upper pixel,
+            # and exclusive of the right and lower pixel.
+            im2 = img.crop((left, upper, right, lower))
+            # Rajout de la piece dans la liste
             pieces.append(im2)
+            save_image(im2, f'{PUZZLE_IMAGES_DIRECTORY}/puzzle{i}/{j}.png')
+            j += 1
 
-    # # Création d'une nouvelle image avec la taille totale du puzzle
-    # total_width = piece_width * st
-    # total_height = piece_height * st
+    # Création d'une nouvelle image avec la taille totale du puzzle
     new_img = Image.new('RGB', (total_width, total_height))
 
     # Mélange aléatoire de la liste des morceaux
@@ -74,4 +78,3 @@ for i, image in enumerate(list_image):
 
     merged_image = get_concat_h(img, new_img)
     save_image(merged_image, f'{MERGED_IMAGES_DIRECTORY}/merged{i}.png')
-
