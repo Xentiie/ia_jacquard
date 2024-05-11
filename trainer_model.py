@@ -5,11 +5,27 @@ import torchvision
 import torchvision.transforms as transforms
 import numpy as np
 import matplotlib.pyplot as plt
-import csv
+import json
+import traceback
+
+try:
+    from alive_progress import alive_it
+except ImportError:
+    def alive_it(it):
+        return it
 
 # Modules personnalisé
 from img_definition import *
 from neural_network import *
+
+def save(file_name:str, nn:PuzzleNet):
+    if savejson == True:
+        dict_out = {}
+        for name, param in nn.named_parameters():
+            if param.requires_grad:
+                dict_out[name] = param.data.tolist()
+        with open(file_name, 'w+') as f:
+            json.dump(dict_out, f)
 
 ########################################################################
 # -------------------- Configuration du programme -------------------- #
@@ -20,7 +36,7 @@ batch_size = 16                                                 # Taille de chaq
 
 local_image_dir = './img'                                       # Chemin du dossier contenant les images locales
 dataset_dir = './data'                                          # Dossier contenant les photos téléchargés
-csv_file = True                                                 # Definit l'enregistrement des poids
+savejson = True                                                 # Definit l'enregistrement des poids
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Utilisation du GPU si disponible
 torch.autograd.set_detect_anomaly(True)                         # Activation de la détection d'anomalies pour le débogage
@@ -34,8 +50,8 @@ transform = transforms.Compose([
 ])
 
 # Chargement du dataset d'images local OU CIFAR avec les transformations spécifiées
-train_set = torchvision.datasets.ImageFolder(root=local_image_dir, transform=transform)
-# train_set = torchvision.datasets.CIFAR100(root=dataset_dir, train=True, download=True, transform=transform)
+#train_set = torchvision.datasets.ImageFolder(root=local_image_dir, transform=transform)
+train_set = torchvision.datasets.CIFAR100(root=dataset_dir, train=True, download=True, transform=transform)
 
 # Configuration du DataLoader pour automatiser le chargement des données, le mélange et le traitement par lots
 sample_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=0)
@@ -78,7 +94,7 @@ def compute_acc(p_pred, p_true, average=True):
         return correct
 
 # Fonction pour entraîner le modèle
-def train_model(model, criterion, optimizer, train_loader, validation_loader, n_epochs=40, save_file_name="none"):
+def train_model(model:PuzzleNet, criterion, optimizer, train_loader, validation_loader, n_epochs=40, save_file_name="none"):
     model.to(device)                                            # Déplace le modèle sur le GPU si disponible
     
     # Initialisation des listes pour l'historique des métriques
@@ -86,14 +102,14 @@ def train_model(model, criterion, optimizer, train_loader, validation_loader, n_
 
     try:
         for epoch in range(n_epochs):
+            print(f"Epoch: {epoch}")
             model.train()                                       # Mode entraînement
             running_loss, n_correct_pred, n_samples = 0.0, 0, 0
 
-            for inputs, _ in train_loader:
+            for inputs, _ in alive_it(train_loader):
                 inputs = inputs.to(device)
-                x_in, perms = permute2x2(inputs)                # Permution appliquée aux données d'entrée
-                y_in = perm_to_matrix(perms).to(device)         # Conversion des permissions en matrice
-                perms = perms.to(device)
+                x_in, perms = (v.to(device) for v in permute2x2(inputs))    # Permution appliquée aux données d'entrée
+                y_in = perm_to_matrix(perms).to(device)                     # Conversion des permissions en matrice
 
                 n_samples += inputs.size(0)
                 optimizer.zero_grad()                           # Réinitialisation des gradients
@@ -102,17 +118,13 @@ def train_model(model, criterion, optimizer, train_loader, validation_loader, n_
                 loss.backward()                                 # Rétropropagation
                 optimizer.step()                                # Mise à jour des poids
 
-                # Sauvegarde des poids du modèle dans un fichier CSV à chaque époque
-                if csv_file == True:
-                    with open(f"./out/model_weights_epoch_{epoch+1}.csv", 'w', newline='') as csvfile:
-                        writer = csv.writer(csvfile)
-                        for name, param in model.named_parameters():
-                            if param.requires_grad:
-                                writer.writerow([name, param.data.tolist()])
-
                 # Mise à jour des statistiques d'entraînement
                 n_correct_pred += compute_acc(matrix_to_perm(outputs), perms, False).item()
                 running_loss += loss.item() * x_in.size(0)
+
+            _filename = f"./out/model_weights_epoch_{epoch+1}.json"
+            print(f"Saving to: {_filename}")
+            save(_filename, model)
 
             # Enregistrement de l'historique de perte et d'exactitude
             loss_history.append(running_loss / n_samples)
@@ -124,11 +136,13 @@ def train_model(model, criterion, optimizer, train_loader, validation_loader, n_
 
             for inputs, _ in validation_loader:
                 inputs = inputs.to(device)
-                x_in, perms = permute2x2(inputs)
+                x_in, perms = (v.to(device) for v in permute2x2(inputs))
                 y_in = perm_to_matrix(perms).to(device)
 
                 n_val_samples += inputs.size(0)
                 outputs = model(x_in)
+                outputs.to(device)
+
                 val_loss = criterion(outputs, y_in)
                 running_val_loss += val_loss.item() * x_in.size(0)
                 n_correct_val_pred += compute_acc(matrix_to_perm(outputs), perms, False).item()
@@ -147,6 +161,7 @@ def train_model(model, criterion, optimizer, train_loader, validation_loader, n_
         }
 
     except Exception as e:
+        print(traceback.format_exc())
         print(f"An error occurred: {e}")
         history = {
             'loss': [],
@@ -207,15 +222,10 @@ save_file_name = None
 n_params = 0
 for p in model.parameters():
     n_params += np.prod(p.size())
-print('# of parameters: {}'.format(n_params))
+print(f'# of parameters: {n_params}')
 
 # Sauvegarde initiale des poids du modèle
-if csv_file == True:
-    with open("./out/model_weights_init.csv", 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        for name, param in model.named_parameters():
-            if param.requires_grad:
-                writer.writerow([name, param.data.tolist()])
+save("./out/model_weights_init.json", model)
 
 # Définition du critère de perte et de l'optimiseur
 criterion = nn.BCELoss()                                        # Perte de cross-entropie binaire
