@@ -7,3 +7,5 @@ data/*
 .DS_Store
 *.pages
 *.txt
+
+out/*
