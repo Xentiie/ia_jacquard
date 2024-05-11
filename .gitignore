@@ -9,3 +9,4 @@ data/*
 *.txt
 
 out/*
+__pycache__/*
