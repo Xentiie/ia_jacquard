@@ -3,6 +3,7 @@
 *.jpg
 *.webp
 *.csv
+*.json
 data/*
 .DS_Store
 *.pages

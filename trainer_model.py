@@ -7,12 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import json
 import traceback
-
-try:
-    from alive_progress import alive_it
-except ImportError:
-    def alive_it(it):
-        return it
+from alive_progress import alive_bar
 
 # Modules personnalisé
 from img_definition import *
@@ -100,75 +95,80 @@ def train_model(model:PuzzleNet, criterion, optimizer, train_loader, validation_
     # Initialisation des listes pour l'historique des métriques
     loss_history, val_loss_history, acc_history, val_acc_history = [], [], [], []
 
-    try:
-        for epoch in range(n_epochs):
-            print(f"Epoch: {epoch}")
-            model.train()                                       # Mode entraînement
-            running_loss, n_correct_pred, n_samples = 0.0, 0, 0
+    _l = len(train_loader)
+    _l2 = len(validation_loader)
+    with alive_bar(total=(n_epochs + _l * n_epochs + _l2 * n_epochs)) as bar:
+        try:
+            for epoch in range(n_epochs):
+                model.train()                                       # Mode entraînement
+                running_loss, n_correct_pred, n_samples = 0.0, 0, 0
 
-            for inputs, _ in alive_it(train_loader):
-                inputs = inputs.to(device)
-                x_in, perms = (v.to(device) for v in permute2x2(inputs))    # Permution appliquée aux données d'entrée
-                y_in = perm_to_matrix(perms).to(device)                     # Conversion des permissions en matrice
+                for inputs, _ in train_loader:
+                    inputs = inputs.to(device)
+                    x_in, perms = (v.to(device) for v in permute2x2(inputs))    # Permution appliquée aux données d'entrée
+                    y_in = perm_to_matrix(perms).to(device)                     # Conversion des permissions en matrice
 
-                n_samples += inputs.size(0)
-                optimizer.zero_grad()                           # Réinitialisation des gradients
-                outputs = model(x_in)                           # Prédictions du modèle
-                loss = criterion(outputs, y_in)                 # Calcul de la perte
-                loss.backward()                                 # Rétropropagation
-                optimizer.step()                                # Mise à jour des poids
+                    n_samples += inputs.size(0)
+                    optimizer.zero_grad()                           # Réinitialisation des gradients
+                    outputs = model(x_in)                           # Prédictions du modèle
+                    loss = criterion(outputs, y_in)                 # Calcul de la perte
+                    loss.backward()                                 # Rétropropagation
+                    optimizer.step()                                # Mise à jour des poids
 
-                # Mise à jour des statistiques d'entraînement
-                n_correct_pred += compute_acc(matrix_to_perm(outputs), perms, False).item()
-                running_loss += loss.item() * x_in.size(0)
+                    # Mise à jour des statistiques d'entraînement
+                    n_correct_pred += compute_acc(matrix_to_perm(outputs), perms, False).item()
+                    running_loss += loss.item() * x_in.size(0)
+                    bar()
 
-            _filename = f"./out/model_weights_epoch_{epoch+1}.json"
-            print(f"Saving to: {_filename}")
-            save(_filename, model)
+                _filename = f"./out/model_weights_epoch_{epoch+1}.json"
+                print(f"Saving to: {_filename}")
+                save(_filename, model)
 
-            # Enregistrement de l'historique de perte et d'exactitude
-            loss_history.append(running_loss / n_samples)
-            acc_history.append(n_correct_pred / n_samples)
+                # Enregistrement de l'historique de perte et d'exactitude
+                loss_history.append(running_loss / n_samples)
+                acc_history.append(n_correct_pred / n_samples)
 
-            # Phase de validation
-            model.eval()                                        # Mode évaluation
-            running_val_loss, n_correct_val_pred, n_val_samples = 0.0, 0, 0
+                # Phase de validation
+                model.eval()                                        # Mode évaluation
+                running_val_loss, n_correct_val_pred, n_val_samples = 0.0, 0, 0
 
-            for inputs, _ in validation_loader:
-                inputs = inputs.to(device)
-                x_in, perms = (v.to(device) for v in permute2x2(inputs))
-                y_in = perm_to_matrix(perms).to(device)
+                for inputs, _ in validation_loader:
+                    inputs = inputs.to(device)
+                    x_in, perms = (v.to(device) for v in permute2x2(inputs))
+                    y_in = perm_to_matrix(perms).to(device)
 
-                n_val_samples += inputs.size(0)
-                outputs = model(x_in)
-                outputs.to(device)
+                    n_val_samples += inputs.size(0)
+                    outputs = model(x_in)
+                    outputs.to(device)
 
-                val_loss = criterion(outputs, y_in)
-                running_val_loss += val_loss.item() * x_in.size(0)
-                n_correct_val_pred += compute_acc(matrix_to_perm(outputs), perms, False).item()
+                    val_loss = criterion(outputs, y_in)
+                    running_val_loss += val_loss.item() * x_in.size(0)
+                    n_correct_val_pred += compute_acc(matrix_to_perm(outputs), perms, False).item()
+                    bar()
 
-            val_loss_history.append(running_val_loss / n_val_samples)
-            val_acc_history.append(n_correct_val_pred / n_val_samples)
+                val_loss_history.append(running_val_loss / n_val_samples)
+                val_acc_history.append(n_correct_val_pred / n_val_samples)
 
-            # Affichage des statistiques pour chaque époque
-            print(f"Epoch {epoch+1:03d}: loss={loss_history[-1]:.4f}, val_loss={val_loss_history[-1]:.4f}, acc={acc_history[-1]:.2%}, val_acc={val_acc_history[-1]:.2%}")
+                # Affichage des statistiques pour chaque époque
+                print(f"Epoch {epoch+1:03d}: loss={loss_history[-1]:.4f}, val_loss={val_loss_history[-1]:.4f}, acc={acc_history[-1]:.2%}, val_acc={val_acc_history[-1]:.2%}")
+                bar()
 
-        history = {
-            'loss': loss_history,
-            'val_loss': val_loss_history,
-            'acc': acc_history,
-            'val_acc': val_acc_history
-        }
+            history = {
+                'loss': loss_history,
+                'val_loss': val_loss_history,
+                'acc': acc_history,
+                'val_acc': val_acc_history
+            }
 
-    except Exception as e:
-        print(traceback.format_exc())
-        print(f"An error occurred: {e}")
-        history = {
-            'loss': [],
-            'val_loss': [],
-            'acc': [],
-            'val_acc': []
-        }
+        except Exception as e:
+            print(traceback.format_exc())
+            print(f"An error occurred: {e}")
+            history = {
+                'loss': [],
+                'val_loss': [],
+                'acc': [],
+                'val_acc': []
+            }
 
     # Sauvegarde finale du modèle si un nom de fichier est spécifié
     if save_file_name is not None:
